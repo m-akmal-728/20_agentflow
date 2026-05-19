@@ -1,0 +1,71 @@
+name: test-panel
+description: "Multi-expert test-strategy review — coverage, fixture design, AC measurability, regression discipline, integration scope, and verification gates"
+
+modes:
+  - discussion
+  - critique
+  - socratic
+  - debate
+
+focus-areas:
+  - name: coverage
+    description: "Test scope across unit/integration/e2e; gap analysis; hot-path identification; mutation thinking"
+    lead: lisa-crispin
+    experts: [lisa-crispin, janet-gregory, gojko-adzic]
+
+  - name: fixtures
+    description: "Fixture quality, labeled-data design, deterministic seeds, drift over time, fixture rot detection"
+    lead: gojko-adzic
+    experts: [gojko-adzic, lisa-crispin]
+
+  - name: acceptance
+    description: "AC testability; spec-by-example; whether each AC can be falsified by a single failing assertion"
+    lead: gojko-adzic
+    experts: [gojko-adzic, karl-wiegers, lisa-crispin]
+
+  - name: regression
+    description: "Regression discipline; flaky-test prevention; CI/CD gating; failure-recovery from broken main"
+    lead: janet-gregory
+    experts: [janet-gregory, lisa-crispin, michael-nygard]
+
+default-experts: [lisa-crispin, janet-gregory, gojko-adzic, karl-wiegers]
+
+max-experts: 6
+
+auto-select:
+  - keywords: [fixture, eval, labeled, ground-truth, gold-set]
+    add: [gojko-adzic]
+  - keywords: [coverage, gap, missing, untested]
+    add: [lisa-crispin]
+  - keywords: [flaky, flakiness, intermittent, ci, pipeline]
+    add: [janet-gregory]
+  - keywords: [acceptance-criteria, spec-by-example, atdd, given-when-then]
+    add: [gojko-adzic, karl-wiegers]
+  - keywords: [integration, end-to-end, e2e, live-net, smoke]
+    add: [lisa-crispin, michael-nygard]
+  - keywords: [mock, stub, fake, double, monkeypatch]
+    add: [lisa-crispin]
+  - keywords: [migration, schema, alembic, upgrade, downgrade]
+    add: [michael-nygard]
+  - keywords: [contract, contract-test, consumer, provider]
+    add: [martin-fowler]
+
+scoring:
+  min: 0
+  max: 10
+  pass-threshold: 7.0
+  dimensions:
+    - name: ac-testability
+      description: "Can each AC be falsified by a single failing pytest assertion; are process ACs separated from machine-enforceable ACs"
+    - name: coverage-completeness
+      description: "Is the test plan complete across unit/integration/regression; are the right boundaries mocked vs real"
+    - name: fixture-quality
+      description: "Are labeled fixtures present where correctness ACs require them; are fixture drift and rot addressed"
+    - name: regression-discipline
+      description: "Does the plan prevent re-introducing prior bugs; are CI gates and failure-recovery paths specified"
+
+output:
+  default-format: standard
+  include-scores: true
+  include-roadmap: true
+  include-consensus: true

@@ -1,0 +1,76 @@
+name: ai-panel
+description: "Multi-expert AI/ML specification review — gate for ML system designs, LLM apps, eval plans, and AI safety claims"
+
+modes:
+  - discussion
+  - critique
+  - socratic
+  - debate
+
+focus-areas:
+  - name: fundamentals
+    description: "Model architecture, training methodology, scaling assumptions, learning theory"
+    lead: andrej-karpathy
+    experts: [andrej-karpathy, jared-kaplan, francois-chollet]
+
+  - name: evaluation
+    description: "Benchmark design, contamination, generalization, eval rigor, leakage"
+    lead: francois-chollet
+    experts: [francois-chollet, emily-bender, andrej-karpathy]
+
+  - name: safety
+    description: "Alignment, harms, interpretability, agentic risks, dual-use concerns"
+    lead: stuart-russell
+    experts: [stuart-russell, christopher-olah, timnit-gebru]
+
+  - name: production
+    description: "MLOps, serving latency, cost, monitoring, data pipelines, drift"
+    lead: chip-huyen
+    experts: [chip-huyen, andrej-karpathy]
+
+  - name: ethics-data
+    description: "Dataset provenance, bias, documentation, model cards, stakeholder harms"
+    lead: timnit-gebru
+    experts: [timnit-gebru, emily-bender]
+
+default-experts: [andrej-karpathy, francois-chollet, chip-huyen, emily-bender]
+
+max-experts: 6
+
+auto-select:
+  - keywords: [scaling, compute, parameters, flops, chinchilla, training-budget]
+    add: [jared-kaplan]
+  - keywords: [interpretability, mechanistic, circuits, probing, sae, features]
+    add: [christopher-olah]
+  - keywords: [alignment, agent, autonomous, rlhf, safety, jailbreak, deception]
+    add: [stuart-russell]
+  - keywords: [bias, dataset, provenance, fairness, ethics, model-card, datasheet]
+    add: [timnit-gebru]
+  - keywords: [eval, benchmark, contamination, leakage, generalization, arc, reasoning]
+    add: [francois-chollet]
+  - keywords: [production, serving, latency, mlops, drift, monitoring, deployment, cost]
+    add: [chip-huyen]
+  - keywords: [rag, finetune, prompt, llm-app, embedding, retrieval]
+    add: [chip-huyen, andrej-karpathy]
+  - keywords: [linguistic, semantics, language-model, claim, capability]
+    add: [emily-bender]
+
+scoring:
+  min: 0
+  max: 10
+  pass-threshold: 7.0
+  dimensions:
+    - name: technical-soundness
+      description: "Does the architecture/method actually work for the stated problem; are assumptions defensible"
+    - name: evaluation-rigor
+      description: "Are success metrics measurable, contamination-controlled, and resistant to gaming"
+    - name: safety-alignment
+      description: "Are risks, harms, misuse paths, and alignment concerns addressed proportionate to capability"
+    - name: production-readiness
+      description: "Are data pipelines, serving cost, latency, monitoring, and failure modes accounted for"
+
+output:
+  default-format: standard
+  include-scores: true
+  include-roadmap: true
+  include-consensus: true

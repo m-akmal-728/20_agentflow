@@ -1,0 +1,69 @@
+name: architecture-panel
+description: "Multi-expert architecture review — interface design, system boundaries, scalability patterns, failure modes, and integration topology"
+
+modes:
+  - discussion
+  - critique
+  - socratic
+  - debate
+
+focus-areas:
+  - name: boundaries
+    description: "Module/service boundaries, contracts, coupling, cohesion, dependency direction"
+    lead: sam-newman
+    experts: [sam-newman, martin-fowler, gregor-hohpe]
+
+  - name: integration
+    description: "Inter-service patterns, message exchange, eventual consistency, idempotency, distributed transactions"
+    lead: gregor-hohpe
+    experts: [gregor-hohpe, sam-newman, michael-nygard]
+
+  - name: reliability
+    description: "Failure modes, circuit breakers, bulkheads, timeouts, degradation paths, recovery"
+    lead: michael-nygard
+    experts: [michael-nygard, sam-newman, gregor-hohpe]
+
+  - name: evolution
+    description: "Change cost, versioning strategy, refactor paths, abstraction maturity, legacy carry-over"
+    lead: martin-fowler
+    experts: [martin-fowler, sam-newman]
+
+default-experts: [martin-fowler, sam-newman, gregor-hohpe, michael-nygard]
+
+max-experts: 6
+
+auto-select:
+  - keywords: [microservice, service-mesh, api-gateway, sidecar]
+    add: [sam-newman]
+  - keywords: [event, message, queue, pub-sub, streaming, integration]
+    add: [gregor-hohpe]
+  - keywords: [circuit-breaker, bulkhead, retry, timeout, failure, resilience, degraded]
+    add: [michael-nygard]
+  - keywords: [refactor, legacy, technical-debt, evolution, abstraction, pattern]
+    add: [martin-fowler]
+  - keywords: [plugin, adapter, contract, interface, boundary]
+    add: [martin-fowler, sam-newman]
+  - keywords: [kubernetes, serverless, container, deploy, infrastructure]
+    add: [kelsey-hightower]
+  - keywords: [database, migration, schema, ddl, transaction, sqlite, postgres]
+    add: [martin-fowler]
+
+scoring:
+  min: 0
+  max: 10
+  pass-threshold: 7.0
+  dimensions:
+    - name: boundary-clarity
+      description: "Are module/service boundaries explicit, with one-way dependency arrows and unambiguous contracts at each seam"
+    - name: integration-correctness
+      description: "Are integration patterns appropriate; idempotency, ordering, and delivery guarantees handled explicitly"
+    - name: failure-mode-coverage
+      description: "Are failure modes named and addressed; timeouts, retries, circuit-breakers, fallbacks specified where needed"
+    - name: evolvability
+      description: "Can the design absorb foreseeable change without rewrites; versioning and migration paths exist"
+
+output:
+  default-format: standard
+  include-scores: true
+  include-roadmap: true
+  include-consensus: true
