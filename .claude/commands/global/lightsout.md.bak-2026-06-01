@@ -684,73 +684,13 @@ Do NOT wait for Dreaming to complete. The session exits immediately after this s
 
 ---
 
-### Step 5a — ICS SITREP for touched incidents (US-ICS-9 AC-03/04)
-
-Per spec `docs/specs/2026-05-27-ics-agent-governance.md` §11 ICS-9: before commit, /lightsout MUST run `/ics-sitrep` for any open incident the session touched, which writes the SITREP, appends an IC-LOG line, and updates `INCIDENTS.md` (the three operations are already a single transaction inside the `ics sitrep --write` CLI, see US-ICS-5). If the resulting status is `CLOSED`, run `ics close <incident_id>` — that CLI atomically writes the archive under `ics/archive/<incident_id>/`, deletes the runtime contract (per US-ICS-3A), and **`git add`s + commits the archive itself** (git cwd = `_REPO_ROOT` = `~/projects/00_Governance`) at close time. **`ics close` owns the single transaction** the spec demands. Step 5b's `ics/archive/**` allowlist (US-ICS-9 AC-05) is a **defensive backstop**, not the transaction boundary: because `ics close` already committed the archive, the Step 5b sweep normally finds nothing new (a benign no-op); it only catches the archive if `ics close`'s own commit failed to land.
-
-**Touched incident set (Claude determines):** enumerate the open `incident_id`s this session interacted with — read the contract, ran `ics readback`, wrote a manual SITREP, or modified files referenced by the contract. If the session did not touch any open incidents, this step is a no-op. Do NOT iterate over all open incidents indiscriminately — that would emit empty SITREPs and pollute IC-LOG.
-
-```bash
-GW=~/projects/00_Governance
-ICS_BIN="$GW/bin/ics"
-
-# TOUCHED_INCIDENTS is set by Claude based on session context — populate as a
-# space-separated list of incident_ids the session worked with, or leave empty
-# if none. Example: TOUCHED_INCIDENTS="ics-2026-05-27-foo ics-2026-05-28-bar"
-TOUCHED_INCIDENTS="${TOUCHED_INCIDENTS:-}"
-
-if [ -z "$TOUCHED_INCIDENTS" ]; then
-  echo "ICS_SITREP=no-touched-incidents"
-elif [ ! -x "$ICS_BIN" ]; then
-  echo "ICS_SITREP=skipped (bin/ics not executable)" >&2
-else
-  for INCIDENT_ID in $TOUCHED_INCIDENTS; do
-    CONTRACT="$HOME/.local/state/ics/contracts/$INCIDENT_ID.json"
-    if [ ! -f "$CONTRACT" ]; then
-      echo "ICS_SITREP_SKIP=$INCIDENT_ID (no runtime contract; already closed?)" >&2
-      continue
-    fi
-    # Emit SITREP — --write performs the atomic (sitrep + IC-LOG + INCIDENTS.md)
-    # bundle inside the CLI, under portalocker advisory lock (US-ICS-2).
-    "$ICS_BIN" sitrep "$INCIDENT_ID" --write || {
-      echo "ICS_SITREP_FAIL=$INCIDENT_ID" >&2
-      continue
-    }
-    # Read the resulting status from the contract (status field, NOT the SITREP
-    # body — the contract is the source of truth post-sitrep).
-    STATUS=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('status','UNKNOWN'))" "$CONTRACT" 2>/dev/null)
-    echo "ICS_SITREP_OK=$INCIDENT_ID status=$STATUS"
-    if [ "$STATUS" = "CLOSED" ]; then
-      # transactional close (US-ICS-9 AC-03/04) — `ics close` atomically writes
-      # the archive tree under ics/archive/<incident_id>/, deletes the runtime
-      # ~/.local/state/ics/ contract+sitreps for this incident, AND commits the
-      # archive itself (git cwd = _REPO_ROOT; US-ICS-3A `cmd_close`). That commit
-      # IS the single transaction. Step 5b's ics/archive/** sweep (US-ICS-9
-      # AC-05) is only a backstop for the rare case ics close's commit didn't land.
-      "$ICS_BIN" close "$INCIDENT_ID" || echo "ICS_CLOSE_FAIL=$INCIDENT_ID" >&2
-      echo "ICS_CLOSED=$INCIDENT_ID (archive committed by ics close; Step 5b sweep is a backstop)"
-    fi
-  done
-fi
-```
-
-Rationale for placement (between Step 5 Dreaming and Step 5b commit): Step 5a runs **before** Step 5b so that *if* `ics close`'s own commit failed to land, Step 5b's `ics/archive/**` backstop sweep can still pick up the orphaned archive files in the same session. (In the normal path `ics close` has already committed the archive, so ordering relative to Step 5b does **not** affect the single-transaction promise — that promise is kept by `ics close` itself, not by Step 5b.) Running it before Step 5 (Dreaming) would couple SITREP emission to background Dreaming success/failure, which is independent of session wrap-up.
-
-If any incident's SITREP or close fails, Step 5a logs the failure to stderr and continues — Step 5b still proceeds, but the manually-flagged failures should be reviewed before the next session opens with that incident in the open set (the next /kickoff Step −0 will surface it).
-
----
-
 ### Step 5b — Commit Governance Changes (always runs)
 
 Per the global CLAUDE.md allowlist (pre-authorized: `KNOWN_PATTERNS.md`, `HANDOVER-*.md`, `BACKLOG.md` + project-scoped variants), Step 5b auto-commits **only those files**. Everything else in `00_Governance` stays dirty until explicit user review — splitting the staging to sneak unapproved paths in would launder the permission gate (explicitly prohibited by KP-744).
 
-**Exception — `ics/archive/**` (US-ICS-9 AC-05).** Closed-incident archives written by `/ics-sitrep` (on contract status `CLOSED`) are added to this auto-commit allowlist as a **deliberate governance change**, not as an implementation detail. Rationale: archived incidents are immutable audit artifacts (one-shot writes at incident close), so the laundering risk KP-744 guards against does not apply — there is no "future edit to sneak through." The pattern is narrowly scoped (`ics/archive/**` only, never `ics/contracts/` runtime tree which lives in `~/.local/state/`). Spec: `docs/specs/2026-05-27-ics-agent-governance.md` §11 ICS-9.
-
-**Decision (2026-06-01, US-GOV-ICS-SPEC-TXN-DOC-01 — FOR-DEC light): KEEP this sweep + allowlist entry as a backstop.** `ics close` already `git add`s + commits the archive at close time (`ics_lifecycle.py` `close`, git cwd = `_REPO_ROOT`), so in the normal path this Step 5b sweep is a no-op. Options weighed: **(A)** keep the `ics/archive/**` sweep + allowlist entry as a belt-and-suspenders backstop; **(B)** remove both as dead code. Chose **A**. Trade-off: `ics close`'s commit is best-effort — if its `git commit` fails (pre-commit hook rejection, signing error, lock contention) the archive is written to disk but left uncommitted, and this sweep is then the only thing that commits it on session wrap-up. Cost of keeping is ~10 lines of no-op sweep + one narrowly-scoped allowlist entry over immutable audit artifacts (KP-744 laundering risk does not apply, per the rationale above); benefit is converting a silent-uncommitted-archive failure into self-healing on the next `/lightsout`. Reversible — revisit if US-ICS-11 telemetry shows the sweep never fires in practice.
-
 ```bash
-# All governance files live in the git-backed repo at GW (~/projects/00_Governance).
-# The legacy hermes governance-worktree is a frozen archive mirror — never commit there.
+# All governance files live in the git-backed worktree at GW.
+# ~/projects/00_Governance is the non-git parent — never run git there.
 GW=~/projects/00_Governance
 
 CHANGED=()
@@ -769,24 +709,12 @@ while IFS= read -r f; do
   [ -n "$f" ] && CHANGED+=("$f")
 done <<< "$HANDOVER_NEW"
 
-# Closed-incident archives under ics/archive/** (US-ICS-9 AC-05). Both tracked
-# changes and new untracked files — closing an incident writes new archive files,
-# subsequent edits are not expected (immutable audit artifacts) but tolerated.
-ICS_ARCHIVE_TRACKED=$(git -C "$GW" diff --name-only -- 'ics/archive/**' 2>/dev/null)
-ICS_ARCHIVE_NEW=$(git -C "$GW" ls-files --others --exclude-standard 'ics/archive/**')
-while IFS= read -r f; do
-  [ -n "$f" ] && CHANGED+=("$f")
-done <<< "$ICS_ARCHIVE_TRACKED"
-while IFS= read -r f; do
-  [ -n "$f" ] && CHANGED+=("$f")
-done <<< "$ICS_ARCHIVE_NEW"
-
 if [ ${#CHANGED[@]} -eq 0 ]; then
-  echo "governance-worktree allowlist clean — no commit needed"
+  echo "governance allowlist clean — no commit needed"
 else
   git -C "$GW" add "${CHANGED[@]}"
   git -C "$GW" commit -m "chore(governance): /lightsout session wrap-up $(date +%Y-%m-%d)"
-  echo "governance-worktree committed: ${CHANGED[*]}"
+  echo "governance committed: ${CHANGED[*]}"
 fi
 
 OTHER=$(git -C "$GW" status --porcelain | wc -l | tr -d ' ')
@@ -798,7 +726,7 @@ exit 0
 
 Rules:
 - **HANDOVER files are never overwritten** — each session produces a unique timestamped file.
-- **Strict allowlist, not pattern-based** — only `KNOWN_PATTERNS.md`, `BACKLOG.md`, new `HANDOVER-*.md` files (+ per-project variants), and `ics/archive/**` (the one sanctioned pattern-based exception per US-ICS-9 AC-05; rationale in Step 5b body). Adding other files violates the policy Stream A set 2026-04-20.
+- **Strict allowlist, not pattern-based** — only `KNOWN_PATTERNS.md`, `BACKLOG.md`, and new `HANDOVER-*.md` files (+ per-project variants). Adding other files violates the policy Stream A set 2026-04-20.
 - **No split-commit workaround** — if you're tempted to stage a non-allowlist file alongside, STOP and ask the user. Splitting the commit launders permission.
 - **Scope is `00_Governance` only** — project repos (SVG-PAINT, Consigliere, KETO, etc.) never auto-commit here.
 - **No `--no-verify`** — honor pre-commit hooks.

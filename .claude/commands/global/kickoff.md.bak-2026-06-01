@@ -31,13 +31,6 @@ echo "STAMP=${STAMP:-<none>}"
   ```
   Then, at Step 5, override the "next action" suggestion to point at the stamp's critical-path item: read `$GOAL_STOP` if it exists and its `project` matches `$STAMP`, take `scope_uss[]` filtered by `status != "complete"` sorted by `order` ASC — first entry is the next action. If no goal-stop, suggest `/resume-handover` (which will itself consult the stamp).
 
-  **Mission branch (spec §6, after the goal-stop check — fail-closed):** if
-  `active.json` is absent or its goal complete AND a mission resolves
-  (`$MISSION_FILE` non-empty, from `stamp-context.sh`) AND that mission's `status`
-  is `active`, suggest `/mission next` as the next action. Any of {missing/invalid
-  mission, status `blocked`/`complete`} → fall through to the existing behavior. This
-  is suggest-only; never auto-drives.
-
 ### Step −1 — Validate CLAUDE_SESSION_ID (always runs first)
 
 Before any other step, validate that `CLAUDE_SESSION_ID` is available and well-formed:

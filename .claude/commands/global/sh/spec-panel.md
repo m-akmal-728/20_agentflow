@@ -57,8 +57,6 @@ Learning-focused questioning to deepen understanding. Experts pose foundational 
 
 ## Scoring Gate
 
-### Base dimensions (always applied)
-
 4 dimensions, each scored 0-10:
 
 | Dimension     | Description                                    |
@@ -68,31 +66,7 @@ Learning-focused questioning to deepen understanding. Experts pose foundational 
 | Testability   | Measurability and validation capability        |
 | Consistency   | Internal coherence and contradiction detection |
 
-### AI-production dimensions (conditional)
-
-Applied when the spec contains AI/LLM-app keywords (llm, prompt, codex, claude, gpt, agent, rag, embedding, multi-agent, pipeline, model). Source: [PRODUCTION-READINESS-CHECKLIST.md](../../../projects/00_Governance/PRODUCTION-READINESS-CHECKLIST.md) §3, §4, §8.
-
-| Dimension              | What it scores                                                                                      |
-|------------------------|-----------------------------------------------------------------------------------------------------|
-| Output integrity (§3)  | Schema validation, stripping of LLM reasoning artifacts, atomic multi-source writes, refuse-malformed |
-| Isolation enforcement (§4) | Multi-agent "independence" backed by OS-level isolation, not prompt instruction (KP-3682)        |
-| Security boundaries (§8)   | "Read-only" claims backed by enforcement OR labeled as intent-only; defense-in-depth present     |
-
-**Pass threshold: overall score >= 7.0** (base dimensions). When AI-production dimensions are triggered, they must each also score >= 7.0 — they cannot be averaged into the base to mask a weak spot.
-
-### Convergence preservation (KP-3684)
-
-When this panel runs alongside other reviewers (sh:ai-panel, sh:mobile-panel, Codex/Gemini duo, human reviewers), DO NOT synthesize convergent findings into a single voice. Preserve verbatim:
-
-```
-Finding F-N: <one-line summary>
-  - sh:spec-panel (Fowler): "<verbatim quote>"
-  - sh:ai-panel (Karpathy): "<verbatim quote>"
-  - Convergence: 2/2 independent reviewers
-  - FIPD action: <Fix|Investigate|Plan|Decide>
-```
-
-The synthesizer's job is to *count and tag* convergence, not collapse it.
+**Pass threshold: overall score >= 7.0**
 
 Output includes per-dimension scores, overall score, critical issues, expert consensus points, and an improvement roadmap (immediate / short-term / long-term).
 
@@ -107,3 +81,23 @@ Specification review document containing:
 - Priority-ranked improvement recommendations
 
 **SYNTHESIS ONLY** — this panel produces analysis and recommendations. It does not modify the specification without explicit instruction.
+
+## Output Contract (machine-readable verdict)
+
+The quality gate (`quality_gate.run_stage3_panel`) consumes this panel via
+`claude -p` and reads the **score from stdout, not the exit code**. Therefore
+the **final line** of your output MUST be exactly one of:
+
+```
+PANEL-VERDICT: <overall_score>
+PANEL-VERDICT: FAIL: <machine_reason>
+```
+
+- `<overall_score>` is the numeric overall score (0–10, one decimal — e.g. `8.3`).
+  The gate applies the pass threshold (default 7.0); do NOT pre-apply it — just
+  report the score you computed.
+- Use the `FAIL: <machine_reason>` form only when no score could be produced
+  (structural failure) — snake_case naming the first blocker (e.g.
+  `no_content`, `panel_config_missing`, `experts_unavailable`).
+- Emit the line literally, on its own line, as the last meaningful output.
+  Omitting it makes the gate fail-closed with `panel_no_verdict` (inconclusive).

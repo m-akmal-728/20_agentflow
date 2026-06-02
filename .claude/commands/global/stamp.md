@@ -49,6 +49,9 @@ Funnel: <N Ready + M in-progress items matching the stamp>   (counted from 00_Go
 ```
 No prompt, no change.
 
+If a mission resolves for the stamp (`stamp-context.sh` sets `$MISSION_FILE`), add a line to the report:
+`Mission: <mission_id> (goal G/N)` — read G/N from `python3 ~/.claude/scripts/mission_parse.py status --path "$MISSION_FILE"`.
+
 ### Unstamp
 
 There is none. Close the CC session to clear. If mid-session topic change is needed, open a fresh session (cache-economic anyway: a long session on a new topic loses the cache TTL benefit).
@@ -108,9 +111,9 @@ source "$HOME/.claude/scripts/stamp-context.sh"
 Resolve in this order — stop at first match:
 
 1. **Goal-stop active and matches stamp** — `goal-stop/active.json` exists AND its `project` field matches `$STAMP` (or `$STAMP` is a US-ID present in `scope_uss[].id`):
-   - Critical path = `scope_uss[]` filtered by `status != "ready"`, sorted by `order` ASC.
+   - Critical path = `scope_uss[]` filtered by `status != "complete"`, sorted by `order` ASC.
    - Next item = first entry.
-   - Funnel-empty when `exit_condition.all_of` predicates all evaluate true (or all `scope_uss[]` reach `status == "ready"`).
+   - Funnel-empty when `exit_condition.all_of` predicates all evaluate true (or all `scope_uss[]` reach `status == "complete"`).
 2. **Stamp only, no matching goal-stop** — agent reads BACKLOG.md, filters lines matching `$STAMP`, infers order from in-progress status + recent HANDOVER history. Funnel-empty when no Ready/in-progress items match.
 3. **No stamp** — pre-existing unstamped behavior.
 

@@ -55,3 +55,21 @@ An item that fails DOD cannot be deployed. The queue tail enforces this automati
 ```
 
 If any step fails, autopilot pauses and reports the blocker.
+
+## Output Contract (machine-readable verdict)
+
+The quality gate (`quality_gate.run_stage1_dod`) consumes this skill via
+`claude -p` and reads the **verdict from stdout, not the exit code**. Therefore
+the **final line** of your output MUST be exactly one of:
+
+```
+DOD-VERDICT: PASS
+DOD-VERDICT: FAIL: <machine_reason>
+```
+
+- Emit `PASS` only when every applicable checklist item is satisfied.
+- On failure, append a short snake_case `<machine_reason>` naming the first
+  blocking item — e.g. `tests_red`, `uncommitted_changes`, `audit_findings`,
+  `no_provenance`, `app_boot_failed`, `secrets_present`.
+- Emit the line literally, on its own line, as the last meaningful output.
+  Omitting it makes the gate fail-closed with `dod_no_verdict` (inconclusive).
