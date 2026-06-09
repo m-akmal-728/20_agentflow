@@ -740,6 +740,54 @@ If any incident's SITREP or close fails, Step 5a logs the failure to stderr and 
 
 ---
 
+### Step 5a-hooks — Hook Archive Drift Gate (always runs)
+
+Hooks (`~/.claude/hooks/*.sh`) are edited live and were historically un-archived — a one-char path typo in `automation-debt-check.sh` rotted silently for ~weeks because the hook code had no diff/review/history (origin of the detector-trust spec, `specs/2026-06-02-debt-detector-trust-and-prohibition-design.md` §3.1). This gate fails loud on any runtime hook that drifts from its git-tracked archive (`00_Governance/.claude/hooks/`), so no un-mirrored hook edit survives the session that wrote it (P3 — fail loud, not silent).
+
+**Direction of truth is INVERTED vs commands:** runtime is SoT, archive is the copy (`sync-global-hooks.sh` copies runtime → archive). The gate auto-mirrors any drift it finds; the **nightly janitor** commits `00_Governance/.claude/hooks/` (it is intentionally OUTSIDE Step 5b's commit allowlist — widening that allowlist would launder the KP-744 permission gate).
+
+```bash
+# AC-02: fail loud when a runtime hook is un-mirrored, then remediate by syncing
+# (runtime -> archive). exit 0 at the end so a non-zero --check never cancels a
+# sibling tool in a parallel Bash batch (same guard as Step 5b line ~796).
+HSYNC=~/projects/00_Governance/scripts/sync-global-hooks.sh
+if "$HSYNC" --check; then
+  echo "hooks: archive in sync — no drift"
+else
+  echo "!! hooks: DRIFT — runtime hook(s) un-mirrored vs archive. Mirroring now:"
+  "$HSYNC"
+  "$HSYNC" --check && echo "hooks: re-check clean; nightly janitor will commit 00_Governance/.claude/hooks/"
+fi
+exit 0
+```
+
+---
+
+### Step 5a-githooks — CC Commit-Guard Archive Drift Gate (always runs)
+
+The global cc-commit-guard (`~/.config/git/hooks/pre-commit`, KP-1558) lives outside any repo, so it has the same un-versioned-rot exposure that motivated the hook-archive gate above. Its byte-identical archive lives at `00_Governance/scripts/git-hooks/pre-commit` with installer `scripts/git-hooks/cc-guard-sync.sh`. This gate fails loud if the live guard drifts from its archive.
+
+**Direction of truth (same inversion):** runtime is SoT, archive is the copy. On drift the gate re-archives (runtime → repo). Unlike the `.claude/hooks/` archive, `scripts/git-hooks/` is **not** auto-committed by the nightly janitor — it is reviewed code, so a re-archive is left dirty for explicit commit (the loud message says so). Disarm check entirely with `git config --global --unset core.hooksPath`.
+
+```bash
+# Fail loud when the live commit-guard drifts from its versioned archive, then
+# re-archive (runtime -> repo) and surface it for review. exit 0 so a non-zero
+# --check never cancels a sibling tool in a parallel Bash batch.
+GHOOK=~/projects/00_Governance/scripts/git-hooks/cc-guard-sync.sh
+if [ -x "$GHOOK" ]; then
+  if "$GHOOK" --check; then
+    :
+  else
+    echo "!! cc-commit-guard: DRIFT vs archive. Re-archiving (runtime -> repo):"
+    "$GHOOK"
+    echo "   review + commit 00_Governance/scripts/git-hooks/ (not auto-committed)."
+  fi
+fi
+exit 0
+```
+
+---
+
 ### Step 5b — Commit Governance Changes (always runs)
 
 Per the global CLAUDE.md allowlist (pre-authorized: `KNOWN_PATTERNS.md`, `HANDOVER-*.md`, `BACKLOG.md` + project-scoped variants), Step 5b auto-commits **only those files**. Everything else in `00_Governance` stays dirty until explicit user review — splitting the staging to sneak unapproved paths in would launder the permission gate (explicitly prohibited by KP-744).
@@ -785,7 +833,13 @@ if [ ${#CHANGED[@]} -eq 0 ]; then
   echo "governance-worktree allowlist clean — no commit needed"
 else
   git -C "$GW" add "${CHANGED[@]}"
-  git -C "$GW" commit -m "chore(governance): /lightsout session wrap-up $(date +%Y-%m-%d)"
+  # Pathspec-scoped commit (KP-744/KP-1558): `git commit -- <paths>` restricts the
+  # commit to ONLY the allowlist, regardless of what else is staged in the index.
+  # A bare `git commit` here would serialize the whole index — sweeping in any
+  # pre-existing staged runtime/spec files and laundering the permission gate.
+  # The preceding `git add` stays: untracked HANDOVER/ics-archive files must be
+  # staged first for the pathspec commit to include them.
+  git -C "$GW" commit -m "chore(governance): /lightsout session wrap-up $(date +%Y-%m-%d)" -- "${CHANGED[@]}"
   echo "governance-worktree committed: ${CHANGED[*]}"
 fi
 

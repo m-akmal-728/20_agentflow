@@ -1,6 +1,6 @@
 ---
 name: goal
-description: "Reader and executor over ~/.local/state/goal-stop/active.json — the structured intent file with scoped USs, ordering, and exit conditions. Use to inspect the active goal, get the next critical-path US, or clear the goal. In a stamped session whose stamp matches the goal's project, /goal auto-executes the next un-ready US; otherwise it reports and stops."
+description: "Reader and executor over ~/.local/state/goal-stop/active.json — the structured intent file with scoped USs, ordering, and exit conditions. Use to inspect the active goal, get the next critical-path US, or clear the goal. When missions exist, first prompts (mission-link picker) for which mission this goal serves and persists the choice into active.json.mission_id. In a stamped session whose stamp matches the goal's project, /goal then auto-executes the next un-ready US; otherwise it reports and stops."
 argument-hint: "[status | show | clear | next | from <path>]"
 ---
 
@@ -26,6 +26,37 @@ For plan-driven sessions where no `active.json` exists but a plan dir holds a go
 Sibling state: `~/.local/state/goal-stop/active.json.bak-<timestamp>` (from `/goal clear`).
 
 ## Behavior
+
+### Mission-link preamble (runs whenever an active goal + ≥1 mission exist)
+
+Before the read/execute behavior below, if `active.json` exists **and** at least one
+mission file is present, `/goal` asks which mission this goal serves and persists the
+choice. Fires on the active.json-reading paths — `/goal`, `/goal next`, `/goal status`,
+`/goal show` — **not** on `clear` or `from <path>` (archival / reference-only).
+
+```bash
+MISSIONS=$(python3 ~/.claude/scripts/goal_parse.py list-missions)   # JSON array; [] if none
+```
+
+- `[]` (no missions, or no `active.json`) → **skip the preamble entirely**; go straight to the subcommand.
+- ≥1 mission → present an **AskUserQuestion** picker:
+  - Header `Mission`, question: **"Goal found these missions — which does this goal belong to?"**
+  - One option per mission: label = `project`, description = `north_star` + ` [status]`.
+    Mark the mission whose `mission_id` already equals `active.json.mission_id` as `(current)`.
+  - Always include a **"None / keep current"** option so the operator can decline re-pointing.
+- On a mission pick → persist its `mission_id` (taken from that entry in the `list-missions` JSON):
+  ```bash
+  python3 ~/.claude/scripts/goal_parse.py set-mission --mission-id "$CHOSEN_MISSION_ID"
+  ```
+  `set-mission` validates the goal schema first and writes atomically (tempfile + `os.replace`);
+  an empty `--mission-id` unlinks. "None / keep current" → make **no** call.
+- Then continue to the subcommand below. The picked `mission_id` now drives `/goal status|show`
+  ("Serves Mission: …") and the goal-complete `GOAL-VERDICT` chain.
+
+> **Trade-off (per your selection):** this fires on EVERY `/goal` when missions exist —
+> even when already linked — adding one prompt ahead of the stamped auto-execute path.
+> That deliberately cuts against the no-prompt stamp loop. To quiet it later, gate the
+> picker on `active.json.mission_id` being empty (ask only for orphan goals).
 
 ### `/goal` or `/goal next` (no arg)
 
@@ -125,6 +156,9 @@ case "${ARGUMENTS:-next}" in
     ;;
   status|show|next|"")
     [ -f "$GOAL_STOP" ] || { echo "No active goal at $GOAL_STOP"; exit 0; }
+    # Mission-link preamble FIRST (see Behavior): if `goal_parse.py list-missions`
+    # returns a non-empty array, run the AskUserQuestion picker and `set-mission`
+    # before the per-subcommand report/execute below.
     # Parse and report per sub-command (see Behavior section above).
     # Use python3 -c with json.load for reliable parsing — jq may be absent.
     ;;
@@ -163,6 +197,7 @@ Tests live next to it (`~/.claude/scripts/test_goal_parse.py`) — run `python3 
 - `/goal` does NOT create goals. Creation is heavy (intent + scope + exit) and out of scope.
 - `/goal` does NOT call `/mission next` or write a mission file. On goal-complete it emits `GOAL-VERDICT`, records it, and *suggests* `/mission next` — nothing more (v1 shadow).
 - `/goal` does NOT modify `scope_uss[].status`. Status updates flow from `backlog_add.py promote` and `sh:execute` completions — never directly via this command.
+- The mission-link preamble is the ONLY thing `/goal` writes to `active.json`, and it writes ONLY the `mission_id` field (via `goal_parse.py set-mission`, atomic, schema-validated). It never touches `scope_uss`, `exit_condition`, or any other field, and never writes the mission file itself.
 - `/goal` does NOT delete `active.json`. Always archive via rename to `.bak-<timestamp>`.
 - `/goal` does NOT auto-clear on session close. Goals persist by design.
 - `/goal from <path>` does NOT auto-execute, even when stamped. Path-based intent is a *reference*, not a *commitment* — the stamp may match the plan's project by accident. Auto-exec requires explicit goal creation (writing `active.json`), which is the user's deliberate act.
