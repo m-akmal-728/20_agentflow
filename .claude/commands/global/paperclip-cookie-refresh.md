@@ -1,81 +1,47 @@
 ---
 name: paperclip-cookie-refresh
-description: "Test and (if needed) refresh /tmp/paperclip_session.txt during an active CC session. Designed for /loop — read-only when cookie is valid, autonomous Playwright refresh when not."
+description: "Test and (if needed) refresh the Paperclip web-API session cookie (~/.config/paperclip/session.txt). Headless — no Playwright. Shares one implementation with the paperclip-cookie-watchdog DAG."
 ---
 
 # /paperclip-cookie-refresh
 
-This is the **session-bound** counterpart to the Dagu `paperclip-cookie-watchdog` DAG.
-The Dagu version can only *detect* staleness and ntfy you. This one can *refresh* — because Playwright MCP is available inside an active CC session.
+Refreshes the shared Paperclip session cookie (`paperclip-default.session_token`,
+~7-day lifetime) that the hermes-adapter uses to fetch every process-agent's work.
+All 14 process agents depend on it, so a lapsed cookie 401s the whole fleet.
 
-## Intended usage
+Refresh is **headless** via better-auth email+password sign-in (svc acct
+`dagu-automation@paperclip.local`, password in Keychain `paperclip-getaccess-cloud`).
+There is ONE implementation — `00_Governance/scripts/paperclip-cookie-refresh.sh` — used
+by both this command and the autonomous `paperclip-cookie-watchdog.yaml` Dagu DAG.
 
-```
-/loop 1800s /paperclip-cookie-refresh
-```
-
-That fires every 30 minutes during a CC session. On 5 of 6 ticks it's a 1-second curl test that prints `COOKIE_OK` and exits. On the rare expired-cookie tick, it logs in via Playwright and writes a fresh cookie.
-
-Manual invocation also fine — just `/paperclip-cookie-refresh`.
-
-## Execution steps (follow exactly)
-
-**Step 1 — Probe cookie**
+## Usage
 
 ```bash
-if [ ! -f /tmp/paperclip_session.txt ]; then
-  echo "STATUS=MISSING"
-elif [ "$(curl -s -b "$(cat /tmp/paperclip_session.txt)" \
-    'https://paperclip.getaccess.cloud/api/companies/5d0398eb-f390-4c0c-a147-661212903eee/issues?limit=1' \
-    -H 'Accept: application/json' -o /dev/null -w '%{http_code}')" = "200" ]; then
-  echo "STATUS=OK"
-else
-  echo "STATUS=EXPIRED"
-fi
+# Refresh only if invalid/missing/older-than-6d (safe to run anytime):
+~/projects/00_Governance/scripts/paperclip-cookie-refresh.sh --ensure
+
+# Force a fresh mint now:
+~/projects/00_Governance/scripts/paperclip-cookie-refresh.sh --force
+
+# Probe only (exit 0 = valid, 1 = bad):
+~/projects/00_Governance/scripts/paperclip-cookie-refresh.sh --check
 ```
 
-**Step 2 — If STATUS=OK, stop here.** Print `COOKIE_OK (cookie age: $(stat -f %SB /tmp/paperclip_session.txt))` and end the turn. Do NOT touch Playwright. Most invocations land here.
+The script atomic-writes the cookie to `~/.config/paperclip/session.txt`, mirrors a
+backup to `~/.hermes/secrets/paperclip_session.txt`, and validates the minted cookie
+**before** overwriting the existing one (never clobbers a working cookie with a bad mint).
+The adapter reads the file per `/run`, so no restart is needed.
 
-**Step 3 — If STATUS=MISSING or EXPIRED, refresh:**
+## If it fails
 
-  a. Read the service-account password from Keychain:
-     ```bash
-     security find-generic-password -s 'paperclip-getaccess-cloud' -w
-     ```
-     (Email is `dagu-automation@paperclip.local` — created 2026-05-18 as a dedicated automation user.)
+Exit nonzero means the headless sign-in failed — almost always the service-account
+password changed or the account is locked. Fix Keychain entry `paperclip-getaccess-cloud`
+(`security add-generic-password -U -s paperclip-getaccess-cloud -a dagu-automation -w <pw>`),
+then re-run with `--force`. If the account itself needs re-bootstrapping, see
+[reference_paperclip.md](/Users/jcords-macmini/.claude/projects/-Users-jcords-macmini-projects/memory/reference_paperclip.md).
 
-  b. Drive Playwright (use the MCP tools, never inline JS via Bash):
-     - `browser_navigate` → `https://paperclip.getaccess.cloud/auth`
-     - `browser_run_code_unsafe` with:
-       ```js
-       async (page) => {
-         const pw = "INSERT_PASSWORD_FROM_KEYCHAIN_HERE";
-         await page.fill('input[name="email"]', 'dagu-automation@paperclip.local');
-         await page.fill('input[name="password"]', pw);
-         await page.click('button:has-text("Sign In")');
-         await page.waitForTimeout(2500);
-         const cookies = await page.context().cookies('https://paperclip.getaccess.cloud');
-         return cookies.map(c => `${c.name}=${c.value}`).join('; ');
-       }
-       ```
-     - `browser_close`
+## What this is NOT
 
-  c. Atomic write the returned cookie string to `/tmp/paperclip_session.txt`:
-     ```bash
-     umask 077 && echo -n "<COOKIE>" > /tmp/paperclip_session.txt.new \
-       && mv /tmp/paperclip_session.txt.new /tmp/paperclip_session.txt
-     ```
-
-  d. Re-run Step 1 to verify `STATUS=OK`. If still not OK, the service account itself may need re-bootstrapping — see [reference_paperclip.md](/Users/jcords-macmini/.claude/projects/-Users-jcords-macmini-projects/memory/reference_paperclip.md) "Re-bootstrap recipe".
-
-## What this command is NOT
-
-- Not for refreshing the container-side Claude OAuth (that's the `paperclip-token-watchdog.yaml` Dagu DAG — different layer entirely).
-- Not for read/write of Paperclip issues — use `/paperclip` for that.
-- Not a substitute for the Dagu `paperclip-cookie-watchdog.yaml`, which keeps detecting between sessions when CC is closed.
-
-## When NOT to /loop this
-
-- During short sessions (<30min) — probably no value, single manual check is enough.
-- When you're not actually working with Paperclip — wastes a model invocation per cycle.
-- After 22:00 local time — the cookie lasts ~7 days, you don't need 30-min polling overnight.
+- Not the container-side Claude OAuth refresh — that's `paperclip-token-watchdog.yaml`.
+- Not for reading/writing issues — use `/paperclip`.
+- No longer uses Playwright (the old browser-login flow is superseded by headless sign-in).

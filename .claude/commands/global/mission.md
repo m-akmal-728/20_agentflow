@@ -1,7 +1,7 @@
 ---
 name: mission
 description: "Epic-tier orchestrator above /goal. A mission is a per-project, stamp-keyed north-star that turns an ordered ladder of goal-stubs into goals (active.json). v1 is SHADOW-ONLY: /mission next is operator-initiated; the goal-complete chain only proposes, never auto-advances. Subcommands: status, show, new, next, gate, unblock, clear."
-argument-hint: "[status | show | new <project> | next | gate | unblock | clear]"
+argument-hint: "[status | show | new | next | gate | unblock | clear]"
 ---
 
 # /mission — Campaign Orchestrator (v1 shadow-only)
