@@ -124,6 +124,107 @@ The sentinel has a 30-min mtime TTL inside the guard — abandoned lightsouts se
 
 ---
 
+## Step 0W — Worktree Exit-Sweep (always runs, AC-02 US-GOV-WORKTREE-HYGIENE-01)
+
+Enumerate all linked worktrees, write a WORKTREES-OPEN.md snapshot, then resolve each.
+Block exit on any worktree still in DIRTY/IN_PROGRESS/DETACHED state after resolution.
+
+```bash
+python3 - <<'EOF'
+import subprocess, sys, json, os
+from pathlib import Path
+from datetime import datetime, timezone
+
+def git(*args, cwd=None):
+    r = subprocess.run(["git"] + list(args), cwd=cwd,
+                       capture_output=True, text=True)
+    return r.stdout.strip(), r.returncode
+
+# 1. Discover linked worktrees
+raw, rc = git("worktree", "list", "--porcelain")
+if rc != 0:
+    print("worktree list failed — no git repo? Skipping."); sys.exit(0)
+
+worktrees = []
+current = {}
+for line in raw.splitlines():
+    if line.startswith("worktree "):
+        if current:
+            worktrees.append(current)
+        current = {"path": line[9:], "branch": None, "bare": False}
+    elif line.startswith("HEAD "):
+        current["sha"] = line[5:]
+    elif line.startswith("branch "):
+        current["branch"] = line[7:].replace("refs/heads/", "")
+    elif line == "bare":
+        current["bare"] = True
+if current:
+    worktrees.append(current)
+
+# 2. Filter to linked worktrees (not the main repo)
+main_path = worktrees[0]["path"] if worktrees else None
+linked = [w for w in worktrees if w["path"] != main_path and not w.get("bare")]
+
+if not linked:
+    print("No linked worktrees found."); sys.exit(0)
+
+# 3. Write WORKTREES-OPEN.md snapshot
+lines = [
+    f"# WORKTREES-OPEN — {datetime.now(timezone.utc).isoformat(timespec='seconds')}",
+    "",
+    f"Main repo: {main_path}",
+    f"Linked: {len(linked)}",
+    "",
+    "| Path | Branch | SHA | Status |",
+    "|------|--------|-----|--------|",
+]
+
+blockers = []
+for w in linked:
+    path = Path(w["path"])
+    branch = w.get("branch") or "DETACHED"
+    sha = w.get("sha", "?")[:12]
+    status_out, _ = git("status", "--porcelain", cwd=path)
+    dirty = bool(status_out.strip())
+    in_prog_markers = ["REBASE_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD", "BISECT_LOG"]
+    in_prog = any((path / ".git" / m).exists() for m in in_prog_markers)
+    if in_prog:
+        state = "IN_PROGRESS"
+        blockers.append((w["path"], state))
+    elif branch == "DETACHED":
+        state = "DETACHED"
+        blockers.append((w["path"], state))
+    elif dirty:
+        state = "DIRTY"
+        blockers.append((w["path"], state))
+    else:
+        state = "OK"
+    lines.append(f"| {w['path']} | {branch} | {sha} | {state} |")
+
+snapshot = Path.home() / "projects" / "00_Governance" / "WORKTREES-OPEN.md"
+snapshot.write_text("\n".join(lines) + "\n")
+print(f"Snapshot written: {snapshot}")
+
+if blockers:
+    print("", file=sys.stderr)
+    print("WORKTREE SWEEP BLOCKED — resolve before completing /lightsout:", file=sys.stderr)
+    for path, state in blockers:
+        print(f"  {state}: {path}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Options:", file=sys.stderr)
+    print("  1. Run `python3 -m worktree_hygiene` to auto-resolve via the janitor.", file=sys.stderr)
+    print("  2. Manually commit/push/stash, then re-run /lightsout.", file=sys.stderr)
+    print("  3. Lock the worktree to preserve: `git worktree lock <path>`", file=sys.stderr)
+    sys.exit(1)
+
+print(f"All {len(linked)} worktrees clean.")
+EOF
+```
+
+If the script exits non-zero, stop here and resolve the blocked worktrees before continuing.
+
+---
+
 ## Step 0 — Promote Pending Insights (always runs)
 
 Single CLI call — `promote_insights.py` owns the deterministic state machine (read → filter `kp_candidate` → fingerprint-dedupe vs KNOWN_PATTERNS.md → FIPD-classify → append KP-N → archive → clear). Stdlib-only, atomic writes.
