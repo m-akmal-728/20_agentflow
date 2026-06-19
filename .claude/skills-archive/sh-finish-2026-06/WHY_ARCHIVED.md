@@ -1,0 +1,1 @@
+Archived as part of US-GOV-DEBT-17. Retired in favour of superpowers:finishing-a-development-branch (functional superset). Decision record: GET-920 spec at ~/projects/00_Governance/.autopilot/GET-920/spec.md. Date: 2026-06-19.
