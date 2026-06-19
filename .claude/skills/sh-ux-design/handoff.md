@@ -107,5 +107,5 @@ Source: Figma MCP `get_variable_defs` or project design system
 
 Once `/frontend-design` completes:
 - `/sh:verify` — visual + functional verification
-- `/sh:finish` — merge, cleanup worktree
+- `superpowers:finishing-a-development-branch` — merge, cleanup worktree
 - Delete `wireframe/<feature>` branch (structure now lives in hi-fi)
