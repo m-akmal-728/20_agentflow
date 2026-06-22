@@ -572,6 +572,18 @@ Report what the script printed. If any `WARNING: topic file missing` lines appea
 
 ---
 
+## Periodic Hygiene (annual, manual — not a step)
+
+Memory decay sweep: finds memory files with mtime older than 90 days.
+
+```bash
+python3 ~/.claude/projects/-Users-jcords-macmini-projects/memory/decay_sweep.py --dry-run
+```
+
+Review the report, then run `--archive` for confirmed stale files. Remove their MEMORY.md index pointers manually. Target: ≤120 entries. Archive dir: `memory/archive/`. Reversible: move file back + re-add pointer.
+
+---
+
 ## Step S — Session Shape Audit (--full only, pre-HANDOVER)
 
 > **Migration note (2026-05-16):** Moved out of default. Shape audit is diagnostic, not load-bearing — running it every session costs ~4 tool calls for an output the user almost never reads in-line. Stays in `--full` for end-of-day review.
@@ -717,6 +729,40 @@ exit 0
 The output file `/tmp/lightsout-rollcall.md` is consumed by **Step 5** — append its contents verbatim under a `## Backlog Roll-Call` section in HANDOVER. If the file is missing or empty, skip the section silently (never fail the handover on roll-call issues).
 
 **Why batched, not split:** sweeping 10+ BACKLOG.md files plus TODO-Today files via separate Read calls would cost ~12 tool calls and bloat context with full-file content. The grep/awk approach extracts only the Ready titles (<2KB total) in one bash invocation.
+
+---
+
+## Step T1 — Tier-1 Surface Sweep (always runs, non-blocking)
+
+Run the Tier-1 fail-closed sweep to surface QMD collection gaps and malformed Dagu DAGs. Never blocks lightsout — warnings only.
+
+```bash
+GW=~/projects/00_Governance
+python3 "$GW/scripts/tier1_sweep.py" --quiet 2>/dev/null || true
+```
+
+Surface any FAIL lines to the user. If none, print "Tier-1: all surfaces OK". Script: `~/projects/00_Governance/scripts/tier1_sweep.py` (US-GOV-TIER1-SWEEP-01).
+
+---
+
+## Step V — Pre-Handover Reconcile (always runs, before Step 5)
+
+Run the handover reconcile validator to surface contradictions before the HANDOVER file is written. Never blocks lightsout — exit 0 always.
+
+```bash
+GW=~/projects/00_Governance
+python3 "$GW/scripts/handover_reconcile.py" \
+  --todo "$GW/TODO-Today.md" \
+  --gw "$GW" \
+  --quiet 2>/dev/null || true
+```
+
+**Signals surfaced (warnings only — not blocking):**
+- `WARN US-XX-NN: no commit found` — handover claims a US was shipped but no git commit references it across known repos. Review the claim.
+- `STALE TODO <file>: last modified Nh ago` — a session TODO file older than 24h; candidate for retirement.
+- `SIBLING <HANDOVER-*.md>: modified in last 4h` — a sibling handover to cross-check before Step ⏚ merges them.
+
+**Script:** `~/projects/00_Governance/scripts/handover_reconcile.py` (US-GOV-HANDOVER-RECONCILE-01)
 
 ---
 
